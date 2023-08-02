@@ -7,7 +7,7 @@ data = pd.read_csv('/Users/vivaan/PycharmProjects/Observations/random experiment
 
 unique_help_values = data['Help'].unique()
 if len(unique_help_values) > 2 or not all(value in [0, 1] for value in unique_help_values):
-    raise ValueError("The 'Help' column must contain only 0s and 1s for logistic regression.")
+    raise ValueError("Only 0's and 1's in the help column!")
 
 X = data[['GPA']]
 X = sm.add_constant(X)
