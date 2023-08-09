@@ -1,59 +1,44 @@
-import pandas as pd
-import statsmodels.api as sm
 import numpy as np
-from scipy.stats import wilcoxon
+import pandas as pd
+from sklearn.metrics.pairwise import euclidean_distances
 
-data = pd.read_csv('/Users/vivaan/PycharmProjects/Observations/random experiment - Sheet1.csv')
+welder_data = {
+    "ID": list(range(1, 22)),
+    "Age_Welder": [38, 44, 39, 33, 35, 39, 27, 43, 39, 43, 41, 36, 35, 37, 39, 34, 35, 53, 38, 37, 38],
+    "Race_Welder": ['C', 'C', 'C', 'AA', 'C', 'C', 'C', 'C', 'C', 'AA', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C'],
+    "Smoker_Welder": ['N', 'N', 'Y', 'Y', 'Y', 'Y', 'N', 'Y', 'Y', 'N', 'Y', 'N', 'N', 'N', 'Y', 'N', 'Y', 'N', 'Y', 'N', 'Y'],
+    "Propensity_Score_Welder": [0.46, 0.34, 0.57, 0.51, 0.65, 0.57, 0.68, 0.49, 0.57, 0.20, 0.53, 0.50, 0.52, 0.48, 0.57, 0.54, 0.65, 0.19, 0.60, 0.48, 0.60]
+}
 
-unique_help_values = data['Help'].unique()
-if len(unique_help_values) > 2 or not all(value in [0, 1] for value in unique_help_values):
-    raise ValueError("Only 0's and 1's in the help column!")
+control_data = {
+    "ID": list(range(1, 28)),
+    "Age_Control": [45, 47, 39, 41, 34, 31, 35, 41, 34, 50, 44, 42, 40, 44, 35, 38, 36, 52, 36, 42, 38, 30, 38, 40, 38, 42, 38, 40],
+    "Race_Control": ['C', 'C', 'C', 'C', 'C', 'AA', 'C', 'AA', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C'],
+    "Smoker_Control": ['N', 'N', 'Y', 'N', 'N', 'Y', 'N', 'Y', 'N', 'N', 'Y', 'N', 'N', 'N', 'N', 'Y', 'N', 'N', 'Y', 'N', 'N', 'N', 'Y', 'N', 'Y', 'N', 'Y', 'N'],
+    "Propensity_Score_Control": [0.32, 0.28, 0.57, 0.40, 0.67, 0.55, 0.65, 0.35, 0.54, 0.23, 0.47, 0.38, 0.42, 0.34, 0.52, 0.46, 0.64, 0.20, 0.64, 0.38, 0.63, 0.46, 0.64, 0.38, 0.60, 0.38, 0.46, 0.46]
+}
 
-X = data[['GPA']]
-X = sm.add_constant(X)
-y = data['Help']
+welder_df = pd.DataFrame(welder_data)
+control_df = pd.DataFrame(control_data)
 
-logit_model = sm.Logit(y, X)
-logit_result = logit_model.fit()
+# distances between welders and controls. mentioned somwehre in book
+propensity_scores_welders = welder_df["Propensity_Score_Welder"].values.reshape(-1, 1)
+propensity_scores_controls = control_df["Propensity_Score_Control"].values.reshape(-1, 1)
+distance_matrix = euclidean_distances(propensity_scores_welders, propensity_scores_controls) ** 2
 
+caliper = 0.086  # max diff between propensity scores
+matched_pairs = []
+matched_controls = []
 
-propensity_scores = logit_result.predict(X)
+# matching: find controls within range
+# and select the control with the closest propensity score
 
-threshold = 0.1
-matched_data = data.copy()
-matched_data['Propensity_Score'] = propensity_scores
+for welder_idx in range(len(distance_matrix)):
+    potential_controls = np.where(distance_matrix[welder_idx] <= caliper)[0]
+    if len(potential_controls) > 0:
+        best_control = potential_controls[np.argmin(distance_matrix[welder_idx, potential_controls])]
+        matched_pairs.append((welder_idx, best_control))
+        matched_controls.append(best_control)
 
-gpa_group_1 = matched_data[matched_data['Help'] == 1]
-gpa_group_0 = matched_data[matched_data['Help'] == 0]
-
-def find_closest_match(row):
-    group_0_matches = gpa_group_0[
-        np.abs(gpa_group_0['Propensity_Score'] - row['Propensity_Score']) <= threshold
-    ]
-    return group_0_matches.iloc[0] if not group_0_matches.empty else None
-
-matches = gpa_group_1.apply(find_closest_match, axis=1)
-
-# Drop the unused values
-matched_data = matched_data.dropna(subset=['Help'])
-matched_data = matched_data.dropna(subset=['Propensity_Score'])
-
-matched_data = pd.concat([gpa_group_1, matches], axis=0)
-
-# Separate GPA for the groups
-gpa_group_1 = matched_data[matched_data['Help'] == 1]['GPA']
-gpa_group_0 = matched_data[matched_data['Help'] == 0]['GPA']
-
-
-statistic, p_value = wilcoxon(gpa_group_1, gpa_group_0)
-O
-print(f"Wilcoxon Signed-Rank Test:")
-print(f"Statistic: {statistic}")
-print(f"P-value: {p_value}")
-print("")
-
-# wasnt sure what p val to use
-if p_value < 0.05:
-    print("difference is significant.")
-else:
-    print("no difference")
+for welder_idx, control_idx in matched_pairs:
+    print(f"Welder {welder_idx + 1} matched with Control {control_idx + 1}")
